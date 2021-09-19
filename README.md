@@ -1,0 +1,1 @@
+This is a project related to [Talon](https://talonvoice.com/). It is an in-progress set of utility actions and a command generation wizard UI aimed at making it much easier to build new mouse based voice commands for applications. It should not really be considered stable yet since I'm still working out the best API and initial functionality set.
