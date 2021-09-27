@@ -19,3 +19,9 @@ The video shows the following:
 1. The GUI can be brought up by saying "command wizard show". This then presents a menu of voice command templates you can build. The button text in the menu is also mapped as a voice command (e.g. "choose 1").
 2. After selecting one of the menu options you are then shown a full screen overlay allowing you to select the relevant region of the screen to operate on. The overlay can be interracted with via the mouse or the keyboard shortcuts displayed on the screen. The mouse grid built in to knausj\_talon works quite well here also.
 3. After confirming your selection with the enter key a command is added to your clipboard which you can then paste directly in to a .talon file. After that you only need to choose the actual voice command you want to use to trigger it.
+
+## Available builders
+
+* Single image selection. This builder will allow you to choose a region of the screen to save as an image. This image will be clicked by your voice command.
+* Multi image selection. This builder draws a label on each of the matches it finds allowing you to move to the image in question using the 'jump <label>' (e.g. 'jump bat') voice command. 'touch <label>' and 'righty <label>' are also available.
+* Find items in a box/blob detector. This allows you to draw a rectangle which will then be searched for clickable regions. The first column of pixels is treated as background, and the rest is foreground. If the box is wider than high, then the first row are the background pixels. Note that the rectangle you define is relative to the currently focussed window, so if that window gets moved or resised the voice command should still be able to find the relevant region.
