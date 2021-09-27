@@ -189,6 +189,7 @@ class BoxSelectorOverlay(ScreenshotOverlay):
 
         self.hl_region = None
         self.is_selecting = False
+        self.settled_countdown_timer = None
 
     def _calculate_result(self):
         return self.hl_region
@@ -202,6 +203,14 @@ class BoxSelectorOverlay(ScreenshotOverlay):
             ("shift + ctrl + up/down/left/right", "Shrink/grow selection a larger amount"),
         ]
         return commands
+
+    def _selection_settled(self, finished_selection):
+        """
+        Called when we can assume that the user has finished selecting a region, or when
+        they've just started drawing a new one. If you want to draw any other markers
+        after the user has finished selecting this is the place to set and unset
+        a flag for _draw_widgets.
+        """
 
     def _get_region(self):
         """
@@ -287,6 +296,7 @@ class BoxSelectorOverlay(ScreenshotOverlay):
         if evt.event == "mousedown" and evt.button == 0:
             self.hl_region = TalonRect(evt.gpos.x, evt.gpos.y, 0, 0)
             self.is_selecting = True
+            self._selection_settled(False)
             self.can.freeze()
         elif evt.event == "mousemove" and self.is_selecting and self.hl_region:
             self.hl_region = TalonRect(
@@ -298,6 +308,7 @@ class BoxSelectorOverlay(ScreenshotOverlay):
             self.can.freeze()
         elif evt.event == "mouseup" and evt.button == 0:
             self.is_selecting = False
+            self._selection_settled(True)
             self.can.freeze()
 
     def _key_event(self, evt):
@@ -350,7 +361,20 @@ class BoxSelectorOverlay(ScreenshotOverlay):
                         max_pos - getattr(self.hl_region, position)
                     )
 
+            # Start the selection settled countdown timer
+            self._selection_settled(False)
+            self._reset_settled_countdown("2s")
+
             self.can.freeze()
+
+    def _reset_settled_countdown(self, countdown):
+        def _inner():
+            self._selection_settled(True)
+            self.settled_countdown_timer = None
+
+        if self.settled_countdown_timer:
+            cron.cancel(self.settled_countdown_timer)
+        self.settled_countdown_timer = cron.after(countdown, _inner)
 
 
 class ImageSelectorOverlay(BoxSelectorOverlay):
@@ -361,7 +385,6 @@ class ImageSelectorOverlay(BoxSelectorOverlay):
         super().__init__(*args, **kwargs)
         self.locate_threshold = locate_threshold
         self.offset_coord = None
-        self.region_changed = True
         self.result_rects = []
 
     def _calculate_result(self):
@@ -388,30 +411,33 @@ class ImageSelectorOverlay(BoxSelectorOverlay):
         else:
             return None
 
+    def _selection_settled(self, finished_selection):
+        if finished_selection == False:
+            self.result_rects = []
+            return
+
+        th = threading.Thread(target=self._find_matches, daemon=True)
+        th.start()
+        th.join(timeout=1)
+        timed_out = th.is_alive()
+
+        if timed_out or len(self.result_rects) > 20:
+            self._show_flash(
+                "Too many matches, not showing any of them"
+            )
+            self.result_rects = []
+
+        self.can.freeze()
+
     def _draw_widgets(self, canvas):
         super()._draw_widgets(canvas)
         if not self.hl_region:
             return
 
         # Draw other matching regions
-        if self.selection_settled:
-            th = threading.Thread(target=self._find_matches, daemon=True)
-            th.start()
-            th.join(timeout=1)
-            timed_out = th.is_alive()
-
-            if timed_out or len(self.result_rects) > 20:
-                self._show_flash(
-                    "Too many matches, cancelling selection"
-                )
-                self.offset_coord = None
-                self.region_changed = True
-                self.result_rects = []
-                self.hl_region = None
-                self.can.freeze()
-                return
-            else:
-                self._draw_matches(canvas)
+        print(self.result_rects)
+        if len(self.result_rects) > 0:
+            self._draw_matches(canvas)
 
         # Draw the offset marker
         canvas.paint = paint.Paint()
@@ -440,27 +466,25 @@ class ImageSelectorOverlay(BoxSelectorOverlay):
         )
 
     def _find_matches(self):
-        if self.region_changed:
-            cropped_img = self._get_cropped_image()
-            if cropped_img is None:
-                self.result_rects = []
-                return
+        cropped_img = self._get_cropped_image()
+        if cropped_img is None:
+            self.result_rects = []
+            return
 
-            self.result_rects = locate.locate_in_image(
-                self.image,
-                cropped_img,
-                threshold=self.locate_threshold
+        self.result_rects = locate.locate_in_image(
+            self.image,
+            cropped_img,
+            threshold=self.locate_threshold
+        )
+        self.result_rects = [
+            TalonRect(
+                rect.x + self.offsetx,
+                rect.y + self.offsety,
+                rect.width,
+                rect.height
             )
-            self.result_rects = [
-                TalonRect(
-                    rect.x + self.offsetx,
-                    rect.y + self.offsety,
-                    rect.width,
-                    rect.height
-                )
-                for rect in self.result_rects
-            ]
-            self.region_changed = False
+            for rect in self.result_rects
+        ]
 
     def _draw_matches(self, canvas):
         canvas.paint = paint.Paint()
@@ -482,7 +506,6 @@ class ImageSelectorOverlay(BoxSelectorOverlay):
         if evt.event == "mousedown" and evt.button == 0:
             # Reset the coord when a new box is started
             self.offset_coord = None
-            self.region_changed = True
 
         if evt.event == "mouseup" and evt.button == 1:
             self.offset_coord = evt.gpos
@@ -495,26 +518,33 @@ class BlobBoxOverlay(BoxSelectorOverlay):
     live as they define boxes.
     """
 
+    def _selection_settled(self, finished_selection):
+        if finished_selection == False:
+            self.markers = []
+            return
+
+        maybe_image = self._get_cropped_image()
+        if maybe_image is None:
+            return
+
+        img = np.array(maybe_image)
+        region = self._get_region()
+        rects = calculate_blob_rects(img, region)
+
+        self.markers = [
+            MarkerUi.Marker(
+                rect,
+                label
+            )
+            for rect, label in zip(rects, "abcdefghijklmnopqrstuvwxyz0123456789"*3)
+        ]
+        self.can.freeze()
+
     def _draw_widgets(self, canvas):
         super()._draw_widgets(canvas)
 
         if not self.hl_region:
             return
 
-        if self.selection_settled:
-            maybe_image = self._get_cropped_image()
-            if maybe_image is None:
-                return
-
-            img = np.array(maybe_image)
-            region = self._get_region()
-            rects = calculate_blob_rects(img, region)
-
-            markers = [
-                MarkerUi.Marker(
-                    rect,
-                    label
-                )
-                for rect, label in zip(rects, "abcdefghijklmnopqrstuvwxyz0123456789"*3)
-            ]
-            MarkerUi.draw_markers(canvas, markers)
+        if self.markers:
+            MarkerUi.draw_markers(canvas, self.markers)
