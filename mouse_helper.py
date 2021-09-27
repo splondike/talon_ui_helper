@@ -5,7 +5,7 @@ Useful actions related to moving the mouse
 import os
 import math
 import subprocess
-from typing import Union, Optional
+from typing import Union, Optional, List
 
 from talon import actions, ui, clip, screen, Module
 from talon.types import Rect as TalonRect
@@ -163,6 +163,60 @@ class MouseActions:
 
         return rect
 
+    def mouse_helper_find_template_relative(
+        template_path: str,
+        xoffset: int=0,
+        yoffset: int=0,
+        region: Optional[TalonRect]=None
+    ) -> List[TalonRect]:
+        """
+        Finds all matches for the given image template within the given region.
+
+        :param template_path: Filename of the image to find. Can be an absolute path or
+            if no '/' or '\\' character is specified, it is relative to the image
+            templates directory.
+        :param xoffset: Amount to shift in the x direction relative to the
+            center of the template.
+        :param yoffset: Amount to shift in the y direction relative to the
+            center of the template.
+        :param region: The region to search for the template in. Either a screen relative
+            TalonRect (see mouse_helper_calculate_relative_rect) or None to just use the
+            active screen.
+        """
+
+        if region is None:
+            rect = actions.user.mouse_helper_calculate_relative_rect(
+                "0 0 -0 -0",
+                "active_screen"
+            )
+        else:
+            rect = region
+
+        if os.pathsep in template_path:
+            # Absolute path specified
+            template_file = template_path
+        else:
+            # Filename in image templates directory specified
+            template_file = os.path.join(get_image_template_directory(), template_path)
+
+        matches = [
+            TalonRect(
+                match.x + xoffset,
+                match.y + yoffset,
+                match.width,
+                match.height
+            )
+
+            for match in locate.locate(
+                template_file,
+                rect=rect
+            )
+        ]
+
+        return sorted(
+            matches,
+            key=lambda m: (m.x, m.y)
+        )
 
     def mouse_helper_move_image_relative(
         template_path: str,
@@ -202,31 +256,22 @@ class MouseActions:
         else:
             rect = region
 
-        if os.pathsep in template_path:
-            # Absolute path specified
-            template_file = template_path
-        else:
-            # Filename in image templates directory specified
-            template_file = os.path.join(get_image_template_directory(), template_path)
-
-        matches = locate.locate(
-            template_file,
-            rect=rect
-        )
-
-        sorted_matches = sorted(
-            matches,
-            key=lambda m: (m.x, m.y)
+        sorted_matches = actions.user.mouse_helper_find_template_relative(
+            template_path,
+            xoffset,
+            yoffset,
+            rect
         )
 
         if len(sorted_matches) == 0:
-            return
+            # Throw an exception to cancel any following commands in the .talon file
+            raise RuntimeError("No matches")
 
         if disambiguator in ("mouse", "mouse_cycle"):
             # math.ceil is needed here to ensure we only look at pixels after the current template match if we're
             # cycling between matches. math.floor would pick up the current one again.
-            xnorm = math.ceil(actions.mouse_x() - xoffset - sorted_matches[0].width / 2)
-            ynorm = math.ceil(actions.mouse_y() - yoffset - sorted_matches[0].height / 2)
+            xnorm = math.ceil(actions.mouse_x() - sorted_matches[0].width / 2)
+            ynorm = math.ceil(actions.mouse_y() - sorted_matches[0].height / 2)
             filtered_matches = [
                 match
                 for match in sorted_matches
@@ -240,14 +285,14 @@ class MouseActions:
             else:
                 return
         else:
-            if len(matches) <= disambiguator:
+            if len(sorted_matches) <= disambiguator:
                 return
 
             match_rect = sorted_matches[disambiguator]
 
         actions.mouse_move(
-            math.ceil(rect.x + match_rect.x + (match_rect.width / 2) + xoffset),
-            math.ceil(rect.y + match_rect.y + (match_rect.height / 2) + yoffset),
+            math.ceil(rect.x + match_rect.x + (match_rect.width / 2)),
+            math.ceil(rect.y + match_rect.y + (match_rect.height / 2)),
         )
 
     def mouse_helper_blob_picker(bounding_rectangle: TalonRect, min_gap_size: int=5):

@@ -435,7 +435,6 @@ class ImageSelectorOverlay(BoxSelectorOverlay):
             return
 
         # Draw other matching regions
-        print(self.result_rects)
         if len(self.result_rects) > 0:
             self._draw_matches(canvas)
 

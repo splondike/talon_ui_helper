@@ -65,6 +65,29 @@ def handle_image_click_builder(result):
     actions.app.notify("Copied new command to clipboard")
 
 
+def handle_multi_image_builder(result):
+    """
+    Result handler for the multi image marker command builder.
+    """
+    if result is None:
+        return
+
+    filename = save_image_template(result["image"])
+
+    offset_bit = ""
+    if result["offset"]:
+        offset_bit = ", ".join([""] + list(map(lambda x: str(int(x)), result["offset"])))
+
+    command = "\n".join([
+        "",
+        ":",
+        f'    matches = user.mouse_helper_find_template_relative("{filename}"{offset_bit})',
+        "    user.marker_ui_show(matches)",
+    ])
+    actions.clip.set_text(command)
+    actions.app.notify("Copied new command to clipboard")
+
+
 def handle_blob_detect_builder(result):
     """
     Result handler for the blob detect command builder.
@@ -73,15 +96,16 @@ def handle_blob_detect_builder(result):
         return
 
     active_rectangle = ui.active_window().rect
-    def calculate_offset(position, minimum, maximum):
+    def calculate_offset(position, minimum, width):
+        # Split each axis into two to determine which side of the screen
+        # the coordinate is offset from
+        maximum = minimum + width
         split = (minimum + maximum) / 2
         if position > split:
             return str(position - maximum)
         else:
             return str(position - minimum)
 
-    # Split each axis into two to determine which side of the screen
-    # the coordinate is offset from
     offsets = " ".join([
         calculate_offset(result.x, active_rectangle.x, active_rectangle.width),
         calculate_offset(result.y, active_rectangle.y, active_rectangle.height),
@@ -104,6 +128,18 @@ command_wizards = [
         "Click a single image on the screen",
         ImageSelectorOverlay,
         handle_image_click_builder,
+        (
+            "Select a region of the screen as an image to find in your voice command "
+            "then press enter to confirm your selection. Press escape to cancel.\n\n"
+            "After selecting and before enter, optionally right click to define an "
+            "offset from the selected region. This will be clicked instead of the "
+            "center of the region."
+        )
+    ),
+    (
+        "Show markers on all image matches on screen",
+        ImageSelectorOverlay,
+        handle_multi_image_builder,
         (
             "Select a region of the screen as an image to find in your voice command "
             "then press enter to confirm your selection. Press escape to cancel.\n\n"

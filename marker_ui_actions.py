@@ -23,7 +23,7 @@ def _populate_list():
     # Do this after boot to ensure that knausj has loaded first
     ctx.lists["user.marker_ui_label"] = registry.lists["user.letter"][0]
 
-app.register("launch", _populate_list)
+app.register("ready", _populate_list)
 
 
 @mod.action_class
@@ -80,7 +80,6 @@ class MarkerUiActions:
             return
 
         rect = marker_ui.find_rect(label)
-        print(rect)
 
         if rect is None:
             return
