@@ -2,13 +2,17 @@ import abc
 import numpy as np
 import threading
 import datetime
+from typing import Optional
 
-from talon import Module, actions, ui, imgui, canvas, screen
-from talon.skia import image, rrect
+from talon import Module, actions, ui, imgui, canvas, screen, cron
+
+from talon.skia import image, rrect, paint
 from talon.types import Rect as TalonRect
 from talon.experimental import locate
 
 from .ui_widgets import layout_text, render_text
+from .marker_ui import MarkerUi
+from .blob_detector import calculate_blob_rects
 
 
 mod = Module()
@@ -51,6 +55,7 @@ class ScreenshotOverlay(abc.ABC):
         self.text = text
         self.text_position = "bottom"
         self.text_rect = None
+        self.flash_text = None
 
         self.can.register("draw", self._draw)
         self.can.set_blocks_mouse(True)
@@ -63,11 +68,18 @@ class ScreenshotOverlay(abc.ABC):
     def destroy(self):
         self.can.close()
 
+    def _get_keyboard_commands(self):
+        return [
+            ("escape", "Close overlay"),
+            ("enter", "Confirm selection and close overlay"),
+        ]
+
     def _calculate_result(self):
         raise NotImplementedError
 
     def _draw(self, canvas):
         canvas.draw_image(self.image, canvas.rect.x, canvas.rect.y)
+        canvas.paint = paint.Paint()
         canvas.paint.color = "000000aa"
         canvas.draw_rect(canvas.rect)
 
@@ -75,16 +87,23 @@ class ScreenshotOverlay(abc.ABC):
 
         self._draw_text(canvas)
 
+        self._draw_flash(canvas)
+
     def _draw_widgets(self, canvas):
         pass
 
     def _draw_text(self, canvas):
-        if not self.text:
-            return
+        all_text = self.text or ""
+        all_text += "\n\nKeyboard shortcuts (or use equivalent voice command):\n"
+        all_text += "\n".join([
+            f" - {key}: {description}"
+            for key, description in self._get_keyboard_commands()
+        ])
 
-        paint = canvas.paint
-        paint.color = "ffffffff"
-        ((width, height), formatted_text) = layout_text(self.text, paint, 300)
+        canvas.paint = paint.Paint()
+        canvas.paint.set_antialias(True)
+        canvas.paint.color = "ffffffff"
+        ((width, height), formatted_text) = layout_text(all_text, canvas.paint, 600)
 
         xpos = canvas.rect.x + (canvas.width - width - 20) / 2
         ypos = 10 + canvas.rect.y
@@ -92,8 +111,8 @@ class ScreenshotOverlay(abc.ABC):
             ypos = canvas.rect.y + canvas.height - height - 20 - 10
         self.text_rect = TalonRect(xpos, ypos, width + 20, height + 20)
 
-        paint.color = "000000ff"
-        paint.style = paint.Style.FILL
+        canvas.paint.color = "000000ff"
+        canvas.paint.style = canvas.paint.Style.FILL
         thing = rrect.RoundRect.from_rect(
             self.text_rect,
             x=10,
@@ -103,6 +122,38 @@ class ScreenshotOverlay(abc.ABC):
         canvas.draw_rrect(thing)
 
         render_text(canvas, formatted_text, xpos + 10, ypos + 20)
+
+    def _draw_flash(self, canvas):
+        if self.flash_text is None:
+            return
+
+        canvas.paint = paint.Paint()
+        canvas.paint.set_antialias(True)
+        canvas.paint.color = "ffffffff"
+        ((width, height), formatted_text) = layout_text(self.flash_text, canvas.paint, 300)
+
+        xpos = canvas.rect.x + (canvas.width - width - 20) / 2
+        ypos = canvas.rect.y + (canvas.height - height - 20) / 2
+        text_rect = TalonRect(xpos, ypos, width + 20, height + 20)
+
+        canvas.paint.color = "660000ff"
+        canvas.paint.style = canvas.paint.Style.FILL
+        thing = rrect.RoundRect.from_rect(
+            text_rect,
+            x=10,
+            y=10,
+            radii=(10, 10)
+        )
+        canvas.draw_rrect(thing)
+
+        render_text(canvas, formatted_text, xpos + 10, ypos + 20)
+
+    def _show_flash(self, text):
+        self.flash_text = text
+        def clear_flash():
+            self.flash_text = None
+            self.can.freeze()
+        cron.after("2s", clear_flash)
 
     def _focus_event(self, focussed):
         if not focussed:
@@ -142,6 +193,16 @@ class BoxSelectorOverlay(ScreenshotOverlay):
     def _calculate_result(self):
         return self.hl_region
 
+    def _get_keyboard_commands(self):
+        commands = super()._get_keyboard_commands()
+        commands += [
+            ("up/down/left/right", "Nudge selection in indicated direction"),
+            ("shift + up/down/left/right", "Nudge selection a larger amount"),
+            ("ctrl + up/down/left/right", "Shrink/grow selection"),
+            ("shift + ctrl + up/down/left/right", "Shrink/grow selection a larger amount"),
+        ]
+        return commands
+
     def _get_region(self):
         """
         Gets the selected region, normalising any negative widths
@@ -180,10 +241,45 @@ class BoxSelectorOverlay(ScreenshotOverlay):
         canvas.clip_rect(self.hl_region, canvas.ClipOp.INTERSECT)
         canvas.draw_image(self.image, self.offsetx, self.offsety)
         canvas.restore()
-        paint = canvas.paint
-        paint.style = paint.Style.STROKE
-        paint.color = 'ffffffff'
-        canvas.draw_rect(self.hl_region)
+        canvas.paint = paint.Paint()
+        canvas.paint.style = canvas.paint.Style.STROKE
+        canvas.paint.color = 'ffffffff'
+        if self.hl_region.width == 0 or self.hl_region.height == 0:
+            # Deal with the zero thickness cases that happen when using voice commands
+            canvas.draw_line(
+                self.hl_region.x,
+                self.hl_region.y,
+                self.hl_region.x + self.hl_region.width,
+                self.hl_region.y + self.hl_region.height
+            )
+        else:
+            canvas.draw_rect(self.hl_region)
+
+    def _get_region_centre(self):
+        if self.hl_region:
+            return (
+                self.hl_region.x + self.hl_region.width / 2,
+                self.hl_region.y + self.hl_region.height / 2
+            )
+        else:
+            return None
+
+    def _get_cropped_image(self) -> Optional['talon.Image']:
+        if self.hl_region is None:
+            return None
+
+        # I think make_subset does this more cleanly, but I don't know what the Talon API is
+        region = self._get_region()
+        xpos = region.x - self.offsetx
+        ypos = region.y - self.offsety
+        arr = np.array(self.image)[
+            ypos:(ypos + region.height),
+            xpos:(xpos + region.width),
+        ]
+        if len(arr) == 0:
+            return None
+
+        return image.Image.from_array(arr)
 
     def _mouse_event(self, evt):
         super()._mouse_event(evt)
@@ -191,6 +287,7 @@ class BoxSelectorOverlay(ScreenshotOverlay):
         if evt.event == "mousedown" and evt.button == 0:
             self.hl_region = TalonRect(evt.gpos.x, evt.gpos.y, 0, 0)
             self.is_selecting = True
+            self.can.freeze()
         elif evt.event == "mousemove" and self.is_selecting and self.hl_region:
             self.hl_region = TalonRect(
                 self.hl_region.x,
@@ -201,6 +298,58 @@ class BoxSelectorOverlay(ScreenshotOverlay):
             self.can.freeze()
         elif evt.event == "mouseup" and evt.button == 0:
             self.is_selecting = False
+            self.can.freeze()
+
+    def _key_event(self, evt):
+        super()._key_event(evt)
+
+        if evt.event != "keyup" or self.hl_region is None:
+            return
+
+        keymap = [
+            ("left", ["x", "width", "-"]),
+            ("right", ["x", "width", "+"]),
+            ("up", ["y", "height", "-"]),
+            ("down", ["y", "height", "+"]),
+        ]
+
+        for key, args in keymap:
+            if key != evt.key:
+                continue
+
+            position, scale, direction = args
+            magnitude = 25 if 'shift' in evt.mods else 1
+            magnitude = -1 * magnitude if direction == "-" else magnitude
+
+            if 'ctrl' in evt.mods:
+                curr = getattr(self.hl_region, scale)
+                new_val = curr + magnitude
+                new_val = new_val if new_val >= 0 else 1
+                setattr(self.hl_region, scale, new_val)
+            else:
+                curr = getattr(self.hl_region, position)
+                new_val = curr + magnitude
+                new_val = new_val if new_val >= 0 else 0
+                setattr(self.hl_region, position, new_val)
+
+            # Ensure the region is still within the bounds of the canvas
+            for (position, scale) in (("x", "width"), ("y", "height")):
+                min_pos = getattr(self.can.rect, position)
+                max_pos = min_pos + getattr(self.can.rect, scale)
+                curr_extent = getattr(self.hl_region, position) + getattr(self.hl_region, scale)
+
+                if getattr(self.hl_region, position) < min_pos:
+                    setattr(self.hl_region, position, min_pos)
+                if getattr(self.hl_region, position) > max_pos:
+                    setattr(self.hl_region, position, max_pos - 1)
+
+                if curr_extent > max_pos:
+                    setattr(
+                        self.hl_region,
+                        scale,
+                        max_pos - getattr(self.hl_region, position)
+                    )
+
             self.can.freeze()
 
 
@@ -245,14 +394,16 @@ class ImageSelectorOverlay(BoxSelectorOverlay):
             return
 
         # Draw other matching regions
-        if not self.is_selecting:
+        if self.selection_settled:
             th = threading.Thread(target=self._find_matches, daemon=True)
             th.start()
-            th.join(timeout=3)
+            th.join(timeout=1)
             timed_out = th.is_alive()
 
             if timed_out or len(self.result_rects) > 20:
-                # TODO: Show some text saying what happened
+                self._show_flash(
+                    "Too many matches, cancelling selection"
+                )
                 self.offset_coord = None
                 self.region_changed = True
                 self.result_rects = []
@@ -263,10 +414,10 @@ class ImageSelectorOverlay(BoxSelectorOverlay):
                 self._draw_matches(canvas)
 
         # Draw the offset marker
-        paint = canvas.paint
-        paint.style = paint.Style.FILL
-        paint.color = "ff00ffff"
-        paint.set_stroke_width(1)
+        canvas.paint = paint.Paint()
+        canvas.paint.style = canvas.paint.Style.FILL
+        canvas.paint.color = "ff00ffff"
+        canvas.paint.set_stroke_width(1)
         if self.offset_coord is None:
             args = [
                 self.hl_region.x + self.hl_region.width / 2,
@@ -277,6 +428,7 @@ class ImageSelectorOverlay(BoxSelectorOverlay):
                 self.offset_coord.x,
                 self.offset_coord.y
             ]
+            canvas.paint.set_antialias(True)
             canvas.draw_line(
                 *self._get_region_centre(),
                 *args
@@ -287,32 +439,13 @@ class ImageSelectorOverlay(BoxSelectorOverlay):
             2
         )
 
-    def _get_region_centre(self):
-        if self.hl_region:
-            return (
-                self.hl_region.x + self.hl_region.width / 2,
-                self.hl_region.y + self.hl_region.height / 2
-            )
-        else:
-            return None
-
-    def _get_cropped_image(self):
-        if self.hl_region is None:
-            return None
-
-        # I think make_subset does this more cleanly, but I don't know what the Talon API is
-        region = self._get_region()
-        xpos = region.x - self.offsetx
-        ypos = region.y - self.offsety
-        arr = np.array(self.image)[
-            ypos:(ypos + region.height),
-            xpos:(xpos + region.width),
-        ]
-        return image.Image.from_array(arr)
-
     def _find_matches(self):
         if self.region_changed:
             cropped_img = self._get_cropped_image()
+            if cropped_img is None:
+                self.result_rects = []
+                return
+
             self.result_rects = locate.locate_in_image(
                 self.image,
                 cropped_img,
@@ -330,18 +463,18 @@ class ImageSelectorOverlay(BoxSelectorOverlay):
             self.region_changed = False
 
     def _draw_matches(self, canvas):
-        paint = canvas.paint
-        paint.color = "ff0000aa"
-        paint.style = paint.Style.STROKE
-        paint.set_stroke_width(1)
+        canvas.paint = paint.Paint()
+        canvas.paint.color = "ff0000aa"
+        canvas.paint.style = canvas.paint.Style.STROKE
+        canvas.paint.set_stroke_width(1)
         for rect in self.result_rects:
             if rect == self._get_region():
                 continue
             canvas.save()
             canvas.clip_rect(rect, canvas.ClipOp.INTERSECT)
             canvas.draw_image(self.image, self.offsetx, self.offsety)
-            canvas.draw_rect(rect)
             canvas.restore()
+            canvas.draw_rect(rect)
 
     def _mouse_event(self, evt):
         super()._mouse_event(evt)
@@ -354,3 +487,34 @@ class ImageSelectorOverlay(BoxSelectorOverlay):
         if evt.event == "mouseup" and evt.button == 1:
             self.offset_coord = evt.gpos
             self.can.freeze()
+
+
+class BlobBoxOverlay(BoxSelectorOverlay):
+    """
+    And overlay that helps the user build a blob box by displaying the matched blobs
+    live as they define boxes.
+    """
+
+    def _draw_widgets(self, canvas):
+        super()._draw_widgets(canvas)
+
+        if not self.hl_region:
+            return
+
+        if self.selection_settled:
+            maybe_image = self._get_cropped_image()
+            if maybe_image is None:
+                return
+
+            img = np.array(maybe_image)
+            region = self._get_region()
+            rects = calculate_blob_rects(img, region)
+
+            markers = [
+                MarkerUi.Marker(
+                    rect,
+                    label
+                )
+                for rect, label in zip(rects, "abcdefghijklmnopqrstuvwxyz0123456789"*3)
+            ]
+            MarkerUi.draw_markers(canvas, markers)

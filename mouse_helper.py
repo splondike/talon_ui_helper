@@ -5,11 +5,14 @@ Useful actions related to moving the mouse
 import os
 import math
 import subprocess
-from typing import Union
+from typing import Union, Optional
 
 from talon import actions, ui, clip, screen, Module
 from talon.types import Rect as TalonRect
 from talon.experimental import locate
+
+from .blob_detector import calculate_blob_rects
+from .marker_ui import MarkerUi
 
 
 mod = Module()
@@ -41,6 +44,14 @@ def get_image_template_directory():
 
 def find_active_window_rect() -> TalonRect:
     return ui.active_window().rect
+
+
+def screencap_to_image(rect: TalonRect) -> 'talon.skia.image.Image':
+    """
+    Captures the given rectangle off the screen
+    """
+
+    return screen.capture(rect.x, rect.y, rect.width, rect.height)
 
 
 def calculate_relative(modifier: str, start: int, end: int) -> int:
@@ -116,12 +127,49 @@ class MouseActions:
         new_ypos = actions.mouse_y() + ydelta
         actions.mouse_move(new_xpos, new_ypos)
 
+    def mouse_helper_calculate_relative_rect(relative_rect_offsets: str, region:str ="active_screen") -> TalonRect:
+        """
+        Calculates a talon rectangle relative to the entire screen based on the given region
+        of interest and a set of offsets. Examples:
+
+            "0 0 -0 -0", "active_screen": Would indicate the entire active screen.
+            "10 20 30 40", "active_window": Would indicate the region between pixels (10, 20) and (30, 40)
+              on the currently focussed window.
+            "10 20 -30 40", "active_window": Would indicate the region between pixels (10, 20) and
+              the pixel 30 units from the right hand side of the window and 40 units from the top.
+        """
+
+        if region == "active_screen":
+            active_window = ui.active_window()
+            if active_window.id == -1:
+                base_rect = ui.main_screen().rect
+            else:
+                base_rect = active_window.screen.rect
+        elif region == "active_window":
+            base_rect = find_active_window_rect()
+        else:
+            assert "Unhandled region"
+
+        mods = relative_rect_offsets.split(" ")
+        _calc_pos = calculate_relative
+        x = _calc_pos(mods[0], base_rect.x, base_rect.x + base_rect.width)
+        y = _calc_pos(mods[1], base_rect.y, base_rect.y + base_rect.height)
+        rect = TalonRect(
+            x,
+            y,
+            _calc_pos(mods[2], 0, base_rect.width) - int(mods[0]),
+            _calc_pos(mods[3], 0, base_rect.height) - int(mods[1]),
+        )
+
+        return rect
+
+
     def mouse_helper_move_image_relative(
         template_path: str,
         disambiguator: Union[int, str]=0,
         xoffset: int=0,
         yoffset: int=0,
-        region: Union[str, TalonRect]="screen"
+        region: Optional[TalonRect]=None
     ):
         """
         Moves the mouse relative to the template image given in template_path.
@@ -141,19 +189,16 @@ class MouseActions:
             center of the template.
         :param yoffset: Amount to shift in the y direction relative to the
             center of the template.
-        :param region: The region to search for the template in. One of "screen", "window",
-            Rect() for the whole currently active monitor, the currently active window,
-            and a Talon Rect() instance respectively.
+        :param region: The region to search for the template in. Either a screen relative
+            TalonRect (see mouse_helper_calculate_relative_rect) or None to just use the
+            active screen.
         """
 
-        if region == "screen":
-            active_window = ui.active_window()
-            if active_window.id == -1:
-                rect = ui.main_screen().rect
-            else:
-                rect = active_window.screen.rect
-        elif region == "window":
-            rect = find_active_window_rect()
+        if region is None:
+            rect = actions.user.mouse_helper_calculate_relative_rect(
+                "0 0 -0 -0",
+                "active_screen"
+            )
         else:
             rect = region
 
@@ -178,7 +223,8 @@ class MouseActions:
             return
 
         if disambiguator in ("mouse", "mouse_cycle"):
-            # TODO: Say why ceil is needed
+            # math.ceil is needed here to ensure we only look at pixels after the current template match if we're
+            # cycling between matches. math.floor would pick up the current one again.
             xnorm = math.ceil(actions.mouse_x() - xoffset - sorted_matches[0].width / 2)
             ynorm = math.ceil(actions.mouse_y() - yoffset - sorted_matches[0].height / 2)
             filtered_matches = [
@@ -186,7 +232,6 @@ class MouseActions:
                 for match in sorted_matches
                 if (match.y == ynorm and match.x > xnorm) or match.y > ynorm
             ]
-            print(len(sorted_matches), len(filtered_matches), xnorm, ynorm, sorted_matches, filtered_matches)
 
             if len(filtered_matches) > 0:
                 match_rect = filtered_matches[0]
@@ -204,3 +249,19 @@ class MouseActions:
             math.ceil(rect.x + match_rect.x + (match_rect.width / 2) + xoffset),
             math.ceil(rect.y + match_rect.y + (match_rect.height / 2) + yoffset),
         )
+
+    def mouse_helper_blob_picker(bounding_rectangle: TalonRect, min_gap_size: int=5):
+        """
+        Attempts to find clickable elements within the given bounding rectangle, then
+        draws a labelled overlay allowing you to click or move the mouse to them.
+
+        See mouse_helper_calculate_relative_rect for how to get the bounding rectangle.
+        """
+
+        image = screencap_to_image(bounding_rectangle)
+        rects = calculate_blob_rects(image, bounding_rectangle)
+
+        if len(rects) == 0:
+            return
+
+        actions.user.marker_ui_show(rects)
