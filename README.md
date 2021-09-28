@@ -25,3 +25,7 @@ The video shows the following:
 * Single image selection. This builder will allow you to choose a region of the screen to save as an image. This image will be clicked by your voice command.
 * Multi image selection. This builder draws a label on each of the matches it finds allowing you to move to the image in question using the 'jump <label>' (e.g. 'jump bat') voice command. 'touch <label>' and 'righty <label>' are also available.
 * Find items in a box/blob detector. This allows you to draw a rectangle which will then be searched for clickable regions. The first column of pixels is treated as background, and the rest is foreground. If the box is wider than high, then the first row are the background pixels. Note that the rectangle you define is relative to the currently focussed window, so if that window gets moved or resised the voice command should still be able to find the relevant region.
+
+## Settings
+
+The image selector command builder needs a place to save the image templates it generates. By default this is the `image_templates` directory in your Talon user folder. If you'd like to change where these are stored you can use the `user.mouse_helper_template_directory` setting.
