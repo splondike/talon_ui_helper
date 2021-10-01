@@ -30,7 +30,7 @@ def layout_text(
     """
 
     paint = paint.clone()
-    line_height = int(paint.get_textsize() * 1.2)
+    line_height = int(paint.textsize * 1.2)
     space_width = paint.measure_text(" ")[0]
 
     # Break newlines out into their own chunks

@@ -58,11 +58,11 @@ class ScreenshotOverlay(abc.ABC):
         self.flash_text = None
 
         self.can.register("draw", self._draw)
-        self.can.set_blocks_mouse(True)
+        self.can.blocks_mouse = True
         self.can.register("mouse", self._mouse_event)
         self.can.register("key", self._key_event)
         self.can.register("focus", self._focus_event)
-        self.can.set_focused(True)
+        self.can.focused = True
         self.can.freeze()
 
     def destroy(self):
@@ -101,7 +101,7 @@ class ScreenshotOverlay(abc.ABC):
         ])
 
         canvas.paint = paint.Paint()
-        canvas.paint.set_antialias(True)
+        canvas.paint.antialias = True
         canvas.paint.color = "ffffffff"
         ((width, height), formatted_text) = layout_text(all_text, canvas.paint, 600)
 
@@ -128,7 +128,7 @@ class ScreenshotOverlay(abc.ABC):
             return
 
         canvas.paint = paint.Paint()
-        canvas.paint.set_antialias(True)
+        canvas.paint.antialias = True
         canvas.paint.color = "ffffffff"
         ((width, height), formatted_text) = layout_text(self.flash_text, canvas.paint, 300)
 
@@ -442,7 +442,7 @@ class ImageSelectorOverlay(BoxSelectorOverlay):
         canvas.paint = paint.Paint()
         canvas.paint.style = canvas.paint.Style.FILL
         canvas.paint.color = "ff00ffff"
-        canvas.paint.set_stroke_width(1)
+        canvas.paint.stroke_width = 1
         if self.offset_coord is None:
             args = [
                 self.hl_region.x + self.hl_region.width / 2,
@@ -453,7 +453,7 @@ class ImageSelectorOverlay(BoxSelectorOverlay):
                 self.offset_coord.x,
                 self.offset_coord.y
             ]
-            canvas.paint.set_antialias(True)
+            canvas.paint.antialias = True
             canvas.draw_line(
                 *self._get_region_centre(),
                 *args
@@ -489,7 +489,7 @@ class ImageSelectorOverlay(BoxSelectorOverlay):
         canvas.paint = paint.Paint()
         canvas.paint.color = "ff0000aa"
         canvas.paint.style = canvas.paint.Style.STROKE
-        canvas.paint.set_stroke_width(1)
+        canvas.paint.stroke_width = 1
         for rect in self.result_rects:
             if rect == self._get_region():
                 continue
