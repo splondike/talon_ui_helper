@@ -54,23 +54,25 @@ def screencap_to_image(rect: TalonRect) -> 'talon.skia.image.Image':
     return screen.capture(rect.x, rect.y, rect.width, rect.height)
 
 
-def calculate_relative(modifier: str, start: int, end: int) -> int:
+def calculate_relative(modifier: str, start: float, end: float) -> float:
     """
     Helper method for settings. Lets you specify numbers relative to a
     range. For example:
 
-        calculate_relative("-10", 0, 100) == 90
+        calculate_relative("-10.0", 0, 100) == 90
         calculate_relative("10", 0, 100) == 10
         calculate_relative("-0", 0, 100) == 100
+
+    Note that positions and offset are floats.
     """
     if modifier.startswith("-"):
-        modifier_ = int(modifier[1:])
+        modifier_ = float(modifier[1:])
         rel_end = True
     elif modifier == ".":
         # In the middle
         return (end + start) // 2
     else:
-        modifier_ = int(modifier)
+        modifier_ = float(modifier)
         rel_end = False
 
     if rel_end:
@@ -118,7 +120,7 @@ class MouseActions:
             calculate_relative(ypos, 0, rect.height) + rect.y,
         )
 
-    def mouse_helper_move_relative(xdelta: int, ydelta: int):
+    def mouse_helper_move_relative(xdelta: float, ydelta: float):
         """
         Moves the mouse relative to its current position
         """
@@ -157,16 +159,16 @@ class MouseActions:
         rect = TalonRect(
             x,
             y,
-            _calc_pos(mods[2], 0, base_rect.width) - int(mods[0]),
-            _calc_pos(mods[3], 0, base_rect.height) - int(mods[1]),
+            _calc_pos(mods[2], 0, base_rect.width) - float(mods[0]),
+            _calc_pos(mods[3], 0, base_rect.height) - float(mods[1]),
         )
 
         return rect
 
     def mouse_helper_find_template_relative(
         template_path: str,
-        xoffset: int=0,
-        yoffset: int=0,
+        xoffset: float=0,
+        yoffset: float=0,
         region: Optional[TalonRect]=None
     ) -> List[TalonRect]:
         """
@@ -221,8 +223,8 @@ class MouseActions:
     def mouse_helper_move_image_relative(
         template_path: str,
         disambiguator: Union[int, str]=0,
-        xoffset: int=0,
-        yoffset: int=0,
+        xoffset: float=0,
+        yoffset: float=0,
         region: Optional[TalonRect]=None
     ):
         """
