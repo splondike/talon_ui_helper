@@ -51,7 +51,7 @@ def screencap_to_image(rect: TalonRect) -> 'talon.skia.image.Image':
     Captures the given rectangle off the screen
     """
 
-    return screen.capture(rect.x, rect.y, rect.width, rect.height)
+    return screen.capture(rect.x, rect.y, rect.width, rect.height, retina=False)
 
 
 def calculate_relative(modifier: str, start: float, end: float) -> float:
