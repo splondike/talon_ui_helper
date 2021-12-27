@@ -293,8 +293,8 @@ class MouseActions:
             match_rect = sorted_matches[disambiguator]
 
         actions.mouse_move(
-            math.ceil(rect.x + match_rect.x + (match_rect.width / 2)),
-            math.ceil(rect.y + match_rect.y + (match_rect.height / 2)),
+            math.ceil(match_rect.x + (match_rect.width / 2)),
+            math.ceil(match_rect.y + (match_rect.height / 2)),
         )
 
     def mouse_helper_blob_picker(bounding_rectangle: TalonRect, min_gap_size: int=5):
