@@ -381,9 +381,8 @@ class ImageSelectorOverlay(BoxSelectorOverlay):
     """
     Allows the user to select a region on the screen to use as an image for the locator API.
     """
-    def __init__(self, *args, locate_threshold=0.9, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.locate_threshold = locate_threshold
         self.offset_coord = None
         self.result_rects = []
 
@@ -472,8 +471,7 @@ class ImageSelectorOverlay(BoxSelectorOverlay):
 
         self.result_rects = locate.locate_in_image(
             self.image,
-            cropped_img,
-            threshold=self.locate_threshold
+            cropped_img
         )
         self.result_rects = [
             TalonRect(
