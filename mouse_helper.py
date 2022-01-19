@@ -211,7 +211,8 @@ class MouseActions:
 
             for match in locate.locate(
                 template_file,
-                rect=rect
+                rect=rect,
+                threshold=0.999
             )
         ]
 

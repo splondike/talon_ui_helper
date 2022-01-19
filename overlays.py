@@ -471,7 +471,8 @@ class ImageSelectorOverlay(BoxSelectorOverlay):
 
         self.result_rects = locate.locate_in_image(
             self.image,
-            cropped_img
+            cropped_img,
+            threshold=0.999
         )
         self.result_rects = [
             TalonRect(
