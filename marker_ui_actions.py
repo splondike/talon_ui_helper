@@ -21,7 +21,9 @@ marker_ui = None
 
 def _populate_list():
     # Do this after boot to ensure that knausj has loaded first
-    ctx.lists["user.marker_ui_label"] = registry.lists["user.letter"][0]
+    combined_list = dict(registry.lists["user.letter"][0])
+    combined_list.update(dict(registry.lists["user.number_key"][0]))
+    ctx.lists["user.marker_ui_label"] = combined_list
 
 app.register("ready", _populate_list)
 
