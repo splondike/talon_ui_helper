@@ -159,8 +159,8 @@ class MouseActions:
         rect = TalonRect(
             x,
             y,
-            _calc_pos(mods[2], 0, base_rect.width) - float(mods[0]),
-            _calc_pos(mods[3], 0, base_rect.height) - float(mods[1]),
+            _calc_pos(mods[2], base_rect.x, base_rect.x + base_rect.width) - x,
+            _calc_pos(mods[3], base_rect.y, base_rect.y + base_rect.height) - y,
         )
 
         return rect
@@ -307,7 +307,7 @@ class MouseActions:
         """
 
         image = screencap_to_image(bounding_rectangle)
-        rects = calculate_blob_rects(image, bounding_rectangle)
+        rects = calculate_blob_rects(image, bounding_rectangle, min_gap_size=min_gap_size)
 
         if len(rects) == 0:
             return

@@ -36,6 +36,15 @@ def calculate_blob_rects(image: 'talon.skia.Image', region: TalonRect, min_gap_s
         for rect in rects
     ]
 
+def save_mask(mask, output_filename):
+    """
+    Utility function for saving a boolean bitmap to a black and white file
+    """
+
+    from talon.skia import Image
+
+    Image.from_array(mask.astype("uint8")*255).write_file(output_filename)
+
 
 def calculate_blob_rects_from_numpy(image_array: np.ndarray, min_gap_size=5) -> List[TalonRect]:
     """
