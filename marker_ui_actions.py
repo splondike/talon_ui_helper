@@ -4,7 +4,7 @@ Exposes the Marker UI and associated functionality as actions.
 
 from typing import List
 
-from talon import Module, Context, actions, registry, app
+from talon import Module, Context, actions
 from talon.types import Rect as TalonRect
 
 from .marker_ui import MarkerUi
@@ -12,20 +12,26 @@ from .marker_ui import MarkerUi
 
 mod = Module()
 mod.tag("marker_ui_showing", desc="The marker UI labels are showing")
-mod.list("marker_ui_label", desc="List of marker labels used by the marker UI")
+setting_labels = mod.setting(
+    "marker_ui_labels",
+    type=str,
+    desc="Space separated labels to use in the marker UI. See also marker_ui_label capture if overwriting.",
+    default=" ".join("abcdefghijklmnopqrstuvwxyz0123456789")
+)
 
 ctx = Context()
 
 marker_ui = None
 
 
-def _populate_list():
-    # Do this after boot to ensure that knausj has loaded first
-    combined_list = dict(registry.lists["user.letter"][0])
-    combined_list.update(dict(registry.lists["user.number_key"][0]))
-    ctx.lists["user.marker_ui_label"] = combined_list
+@mod.capture(rule="<user.letter> | <user.number>")
+def marker_ui_label(m) -> str:
+    """
+    Capture for the labels used in the marker UI. See also marker_ui_labels setting if you want
+    to override it.
+    """
 
-app.register("ready", _populate_list)
+    return str(m)
 
 
 @mod.action_class
@@ -50,7 +56,7 @@ class MarkerUiActions:
                 rect,
                 label
             )
-            for rect, label in zip(rects, ctx.lists["user.marker_ui_label"].values())
+            for rect, label in zip(rects, setting_labels.get().split(" "))
         ]
 
         marker_ui = MarkerUi(markers)
