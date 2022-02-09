@@ -95,7 +95,7 @@ def handle_blob_detect_builder(result):
     if result is None:
         return
 
-    active_rectangle = ui.active_window().rect
+    active_rectangle = active_rectangle_before_overlay
     def calculate_offset(position, minimum, width):
         # Split each axis into two to determine which side of the screen
         # the coordinate is offset from
@@ -165,10 +165,16 @@ command_wizards = [
 ]
 
 existing_overlay = None
+# On OSX the overlay window itself shows up as the ui.active_window() after the overlay is nominally
+# closed. So we save what the active window rect was just before the overlay is shown.
+active_rectangle_before_overlay = None
 
 
 def open_overlay(index):
     global existing_overlay
+    global active_rectangle_before_overlay
+
+    active_rectangle_before_overlay = ui.active_window().rect
 
     builder_picker_toggle(False)
 
