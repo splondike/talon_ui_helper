@@ -38,6 +38,12 @@ touch <user.marker_ui_label> more:
     user.marker_ui_mouse_move(marker_ui_label)
     mouse_click(0)
 
+touch <user.marker_ui_label> more restore:
+    user.mouse_helper_position_save()
+    user.marker_ui_mouse_move(marker_ui_label)
+    mouse_click(0)
+    user.mouse_helper_position_restore()
+
 righty <user.marker_ui_label> more:
     user.marker_ui_mouse_move(marker_ui_label)
     mouse_click(1)
