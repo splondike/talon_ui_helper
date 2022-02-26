@@ -12,6 +12,13 @@ touch <user.marker_ui_label>:
     mouse_click(0)
     user.marker_ui_hide()
 
+touch <user.marker_ui_label> restore:
+    user.mouse_helper_position_save()
+    user.marker_ui_mouse_move(marker_ui_label)
+    mouse_click(0)
+    user.marker_ui_hide()
+    user.mouse_helper_position_restore()
+
 righty <user.marker_ui_label>:
     user.marker_ui_mouse_move(marker_ui_label)
     mouse_click(1)
