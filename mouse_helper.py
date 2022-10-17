@@ -4,6 +4,8 @@ Useful actions related to moving the mouse
 
 import os
 import math
+import time
+import hashlib
 import subprocess
 from typing import Union, Optional, List
 
@@ -40,6 +42,29 @@ def get_image_template_directory():
             os.path.dirname(os.path.realpath(__file__)),
             "../image_templates"
         )
+
+
+def calculate_image_hash(image: 'talon.skia.Image') -> str:
+    """
+    Calculates a 20 character string that hashes the given image.
+    """
+
+    char_array = image.read_pixels(
+        0,
+        0,
+        image.width,
+        image.height,
+        # Standardise the pixel representation so we get stable hashse; the overlay
+        # output tends to be RGB whereas direct sceren capture is BGRA
+        color_type=image.ColorType.BGRA_8888
+    )
+    # pixel_bytestring = b"".join([i for i in char_array])
+    m = hashlib.sha256()
+    for i, c in enumerate(char_array):
+        m.update(c)
+    # 1 in 10^24 should be fine I think, and makes the hash shorter for
+    # Talonscript embedding
+    return m.hexdigest()[:20]
 
 
 def find_active_window_rect() -> TalonRect:
@@ -313,3 +338,34 @@ class MouseActions:
             return
 
         actions.user.marker_ui_show(rects)
+
+    def mouse_helper_calculate_rectangle_hash(bounding_rectangle: TalonRect) -> str:
+        """
+        Captures the given region and hashes the resultant image into a 20 character string
+        """
+
+        image = screencap_to_image(bounding_rectangle)
+        return calculate_image_hash(image)
+
+    def mouse_helper_wait_region_match(bounding_rectangle: TalonRect, hash: str, wait_match: int, timeout: float) -> str:
+        """
+        Captures the given region and hashes the resultant image into a 20 character string. If this
+        string matches hash and wait_match = 1, then return. Otherwise wait for up to timeout
+        seconds for the match to occur, then return.
+
+        If wait_match = 0 then do the opposite. Wait for the given region to *not* match the given
+        hash.
+
+        If the timeout happens, then throw an AssertionError
+        """
+
+        poll_interval = 0.1
+        for _ in range(int(timeout // poll_interval + 1)):
+            new_hash = actions.user.mouse_helper_calculate_rectangle_hash(bounding_rectangle)
+            print(new_hash)
+            hashes_match = new_hash == hash
+            if hashes_match == (wait_match == 1):
+                return
+            time.sleep(poll_interval)
+
+        raise AssertionError("timeout reached")

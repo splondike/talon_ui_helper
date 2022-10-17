@@ -7,8 +7,8 @@ import datetime
 
 from talon import Module, Context, actions, ui, imgui
 
-from .overlays import ImageSelectorOverlay, BlobBoxOverlay
-from .mouse_helper import get_image_template_directory
+from .overlays import ImageSelectorOverlay, BlobBoxOverlay, BoxSelectorOverlay
+from .mouse_helper import get_image_template_directory, calculate_image_hash
 
 
 mod = Module()
@@ -88,14 +88,7 @@ def handle_multi_image_builder(result):
     actions.app.notify("Copied new command to clipboard")
 
 
-def handle_blob_detect_builder(result):
-    """
-    Result handler for the blob detect command builder.
-    """
-    if result is None:
-        return
-
-    active_rectangle = active_rectangle_before_overlay
+def calculate_offsets_string(active_rectangle, region):
     def calculate_offset(position, minimum, width):
         # Split each axis into two to determine which side of the screen
         # the coordinate is offset from
@@ -106,18 +99,47 @@ def handle_blob_detect_builder(result):
         else:
             return str(position - minimum)
 
-    offsets = " ".join([
-        calculate_offset(result.x, active_rectangle.x, active_rectangle.width),
-        calculate_offset(result.y, active_rectangle.y, active_rectangle.height),
-        calculate_offset(result.x + result.width, active_rectangle.x, active_rectangle.width),
-        calculate_offset(result.y + result.height, active_rectangle.y, active_rectangle.height),
+    return " ".join([
+        calculate_offset(region.x, active_rectangle.x, active_rectangle.width),
+        calculate_offset(region.y, active_rectangle.y, active_rectangle.height),
+        calculate_offset(region.x + region.width, active_rectangle.x, active_rectangle.width),
+        calculate_offset(region.y + region.height, active_rectangle.y, active_rectangle.height),
     ])
+
+
+def handle_blob_detect_builder(result):
+    """
+    Result handler for the blob detect command builder.
+    """
+    if result is None:
+        return
+
+    offsets = calculate_offsets_string(active_rectangle_before_overlay, result["region"])
 
     command = "\n".join([
         "",
         ":",
         f'    bounding_rectangle = user.mouse_helper_calculate_relative_rect("{offsets}", "active_window")',
         f'    user.mouse_helper_blob_picker(bounding_rectangle)',
+    ])
+    actions.clip.set_text(command)
+    actions.app.notify("Copied new command to clipboard")
+
+def handle_content_matcher_overlay(result):
+    """
+    Result handler for the content matcher Talonscript line.
+    """
+    if result is None:
+        return
+
+    image = result["image"]
+    hash = calculate_image_hash(image)
+
+    offsets = calculate_offsets_string(active_rectangle_before_overlay, result["region"])
+
+    command = "\n".join([
+        f'bounding_rectangle = user.mouse_helper_calculate_relative_rect("{offsets}", "active_window")',
+        f'user.mouse_helper_wait_region_match(bounding_rectangle, "{hash}", 1, 2.0)',
     ])
     actions.clip.set_text(command)
     actions.app.notify("Copied new command to clipboard")
@@ -161,7 +183,17 @@ command_wizards = [
             "The background color will be used to detect clickable regions in the area "
             "you selected. "
         )
-    )
+    ),
+    (
+        "Wait for window region to match contents",
+        BoxSelectorOverlay,
+        handle_content_matcher_overlay,
+        (
+            "Select a region of your active window. Some Talonscript that waits for "
+            "up to 2 seconds for the region to match the originally selected content "
+            "will be generated."
+        )
+    ),
 ]
 
 existing_overlay = None

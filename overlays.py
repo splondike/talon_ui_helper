@@ -192,7 +192,10 @@ class BoxSelectorOverlay(ScreenshotOverlay):
         self.settled_countdown_timer = None
 
     def _calculate_result(self):
-        return self.hl_region
+        return {
+            "image": self._get_cropped_image(),
+            "region": self.hl_region
+        }
 
     def _get_keyboard_commands(self):
         commands = super()._get_keyboard_commands()
@@ -405,6 +408,7 @@ class ImageSelectorOverlay(BoxSelectorOverlay):
             return {
                 "image": self._get_cropped_image(),
                 "offset": offset,
+                "region": self.hl_region,
                 "index": index
             }
         else:
