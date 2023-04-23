@@ -161,14 +161,15 @@ class ScreenshotOverlay(abc.ABC):
             self.result_handler(None)
 
     def _key_event(self, evt):
-        if evt.event != "keyup":
+        if evt.down:
             return
 
-        if evt.key == "esc":
+        # Lowercase events are for public, upper for Rust beta
+        if evt.key in ("Escape", "esc"):
             self.destroy()
             self.result_handler(None)
 
-        if evt.key == "return":
+        if evt.key in ("Return", "return"):
             self.destroy()
             self.result_handler(self._calculate_result())
 
@@ -235,10 +236,10 @@ class BoxSelectorOverlay(ScreenshotOverlay):
             height = self.hl_region.height
 
         return TalonRect(
-            x,
-            y,
-            width,
-            height
+            int(x),
+            int(y),
+            int(width),
+            int(height)
         )
 
     def _draw_widgets(self, canvas):
@@ -314,10 +315,17 @@ class BoxSelectorOverlay(ScreenshotOverlay):
     def _key_event(self, evt):
         super()._key_event(evt)
 
-        if evt.event != "keyup" or self.hl_region is None:
+        if evt.down or self.hl_region is None:
             return
 
         keymap = [
+            # Rust beta
+            ("Left", ["x", "width", "-"]),
+            ("Right", ["x", "width", "+"]),
+            ("Up", ["y", "height", "-"]),
+            ("Down", ["y", "height", "+"]),
+
+            # Public Talon
             ("left", ["x", "width", "-"]),
             ("right", ["x", "width", "+"]),
             ("up", ["y", "height", "-"]),
