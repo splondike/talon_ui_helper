@@ -164,12 +164,12 @@ class ScreenshotOverlay(abc.ABC):
         if evt.down:
             return
 
-        # Lowercase events are for public, upper for Rust beta
+        # Lowercase events are for Talon 0.3, upper for 0.4+ (Rust)
         if evt.key in ("Escape", "esc"):
             self.destroy()
             self.result_handler(None)
 
-        if evt.key in ("Return", "return"):
+        if evt.key in ("Return", "return", "Enter"):
             self.destroy()
             self.result_handler(self._calculate_result())
 
@@ -319,13 +319,19 @@ class BoxSelectorOverlay(ScreenshotOverlay):
             return
 
         keymap = [
-            # Rust beta
+            # As of Talon 0.4.0-185 (beta)
+            ("ArrowLeft", ["x", "width", "-"]),
+            ("ArrowRight", ["x", "width", "+"]),
+            ("ArrowUp", ["y", "height", "-"]),
+            ("ArrowDown", ["y", "height", "+"]),
+
+            # Talon 0.4 public
             ("Left", ["x", "width", "-"]),
             ("Right", ["x", "width", "+"]),
             ("Up", ["y", "height", "-"]),
             ("Down", ["y", "height", "+"]),
 
-            # Public Talon
+            # Talon 0.3 public
             ("left", ["x", "width", "-"]),
             ("right", ["x", "width", "+"]),
             ("up", ["y", "height", "-"]),
