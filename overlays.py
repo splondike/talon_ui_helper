@@ -319,7 +319,7 @@ class BoxSelectorOverlay(ScreenshotOverlay):
             return
 
         keymap = [
-            # As of Talon 0.4.0-185 (beta)
+            # Needed between Talon 0.4.0-185 and 0.4.0-335. Can be removed after 2024-12-01 (once -335 changes have reached everybody).
             ("ArrowLeft", ["x", "width", "-"]),
             ("ArrowRight", ["x", "width", "+"]),
             ("ArrowUp", ["y", "height", "-"]),
