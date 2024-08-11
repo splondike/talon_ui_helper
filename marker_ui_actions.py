@@ -4,7 +4,7 @@ Exposes the Marker UI and associated functionality as actions.
 
 from typing import List
 
-from talon import Module, Context, actions
+from talon import Module, Context, actions, settings
 from talon.types import Rect as TalonRect
 
 from .marker_ui import MarkerUi
@@ -52,11 +52,10 @@ class MarkerUiActions:
             marker_ui.destroy()
 
         markers = [
-            MarkerUi.Marker(
-                rect,
-                label
+            MarkerUi.Marker(rect, label)
+            for rect, label in zip(
+                rects, settings.get("user.marker_ui_labels").split(" ")
             )
-            for rect, label in zip(rects, setting_labels.get().split(" "))
         ]
 
         marker_ui = MarkerUi(markers)
