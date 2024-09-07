@@ -7,7 +7,7 @@ import math
 import subprocess
 from typing import Union, Optional, List
 
-from talon import actions, ui, clip, screen, Module
+from talon import actions, ui, clip, screen, settings, Module
 from talon.types import Rect as TalonRect
 from talon.experimental import locate
 
@@ -32,7 +32,7 @@ def get_image_template_directory():
     Gets the full path to the directory where template images are stored.
     """
 
-    maybe_value = setting_template_directory.get()
+    maybe_value = settings.get("user.mouse_helper_template_directory")
     if maybe_value:
         return maybe_value
     else:
