@@ -4,7 +4,7 @@ import threading
 import datetime
 from typing import Optional
 
-from talon import Module, actions, ui, imgui, canvas, screen, cron
+from talon import Module, app, actions, ui, imgui, canvas, screen, cron
 
 from talon.skia import image, rrect, paint
 from talon.types import Rect as TalonRect
@@ -35,29 +35,46 @@ class ScreenshotOverlay(abc.ABC):
     Abstract base class for overlay windows operating on a static screenshot.
     """
 
+    # See _calculate_rect_handler
+    CALCULATE_RECT_CANVAS_COLOR = "010203ff"
+    CALCULATE_RECT_CANVAS_COLOR_NUMERIC = [1, 2, 3, 255]
+
     def __init__(self, result_handler, text=None, screen_idx=None):
         self.result_handler = result_handler
 
         if screen_idx is not None:
-            rect = ui.screens()[screen_idx].rect
+            self.screen_rect = ui.screens()[screen_idx].rect
         else:
             active_window = ui.active_window()
             if active_window.id == -1:
-                rect = ui.main_screen().rect
+                self.screen_rect = ui.main_screen().rect
             else:
-                rect = active_window.screen.rect
-        self.can = canvas.Canvas.from_rect(rect)
-        # Redundantly include these offset so threads can access them (self.can gets locked
-        # during draw handler).
-        self.offsetx = int(self.can.rect.x)
-        self.offsety = int(self.can.rect.y)
-        self.image = screencap_to_image(rect)
+                self.screen_rect = active_window.screen.rect
+
+        self.can = canvas.Canvas.from_rect(self.screen_rect)
+        # Need panel = True for keyboard events to be captured on Linux
+        self.can.panel = True
+        # See _calculate_rect_handler for where this is used to refine
+        # canvas size.
+        self.calculate_rect_state = "initial"
+
+        # We want an unfocus event to destroy the overlay normally, but
+        # we get some initial illegitimate unfocus events, so ignore those.
+        self.unfocus_destroy_enabled = False
+        def _set_unfocus_destroy_enabled():
+            if not self.can.focused:
+                self.destroy()
+            else:
+                self.unfocus_destroy_enabled = True
+        cron.after("1000ms", _set_unfocus_destroy_enabled)
+
+        self.image = screencap_to_image(self.screen_rect)
         self.text = text
         self.text_position = "bottom"
         self.text_rect = None
         self.flash_text = None
 
-        self.can.register("draw", self._draw)
+        self.can.register("draw", self._draw_wrapper)
         self.can.blocks_mouse = True
         self.can.register("mouse", self._mouse_event)
         self.can.register("key", self._key_event)
@@ -68,6 +85,72 @@ class ScreenshotOverlay(abc.ABC):
     def destroy(self):
         self.can.close()
 
+    def _calculate_rect_handler(self):
+        """
+        Working out how big to make the canvas isn't straightforward.
+        Window manager's may move us (OSX, Linux), and may also have
+        floating panels that are positioned above our window (due to
+        panel = True).
+
+        So what we do is take a screenshot after filling our attempt
+        at a full screen canvas with a particular color. We then
+        search the image to find that color, and this tells us what
+        parts aren't covered by window manager decorations. We can
+        then resize and move the canvas to fit within that area.
+
+        An alternative would be to change the whole UI to implement
+        a scrollable window that shows the whole screenshot.
+        """
+
+        if app.platform == "windows":
+            # Windows screen capture doesn't seem to include the overlay,
+            # and doesn't need this trickery anyway, so just go to the regular
+            # draw handler without changing anything.
+            self.calculate_rect_state = "normal"
+            self.can.freeze()
+            return
+
+        talon_img = screencap_to_image(self.screen_rect)
+        img = np.array(
+            talon_img
+        )
+        # Array of True/False indicating whether the pixel is our
+        # special color
+        masked_array = np.all(
+            img == self.CALCULATE_RECT_CANVAS_COLOR_NUMERIC,
+            axis=2
+        )
+
+        def _calculate_bounds(mask, axis):
+            background_items = np.any(
+                mask,
+                axis=axis
+            )
+            bg_start = None
+            bg_end = None
+            for idx, is_background in enumerate(background_items):
+                if is_background:
+                    bg_start = idx if bg_start is None else min(idx, bg_start)
+                    bg_end = idx if bg_end is None else max(idx, bg_end)
+            return bg_start, bg_end + 1
+
+        row_start_idx, row_end_idx = _calculate_bounds(masked_array, 1)
+        col_start_idx, col_end_idx = _calculate_bounds(
+            masked_array[row_start_idx:row_end_idx],
+            0
+        )
+
+        self.can.rect = TalonRect(
+            col_start_idx,
+            row_start_idx,
+            col_end_idx - col_start_idx,
+            row_end_idx - row_start_idx,
+        )
+
+        # Clean up, our work is done.
+        self.calculate_rect_state = "normal"
+        self.can.freeze()
+
     def _get_keyboard_commands(self):
         return [
             ("escape", "Close overlay"),
@@ -77,8 +160,25 @@ class ScreenshotOverlay(abc.ABC):
     def _calculate_result(self):
         raise NotImplementedError
 
+    def _draw_wrapper(self, canvas):
+        # This will delegate to _draw for normal drawing, so override that.
+        # See _calculate_rect_handler for what's happening here
+        if self.calculate_rect_state in ("initial", "drawn"):
+            canvas.paint = paint.Paint()
+            canvas.paint.color = self.CALCULATE_RECT_CANVAS_COLOR
+            canvas.draw_rect(canvas.rect)
+            if self.calculate_rect_state == "initial":
+                # Give the canvas a bit of time to redraw
+                cron.after("200ms", self._calculate_rect_handler)
+            self.calculate_rect_state = "drawn"
+        elif self.calculate_rect_state == "normal":
+            self._draw(canvas)
+        else:
+            assert False, "Unhandled state: " + self.calculate_rect_state
+
     def _draw(self, canvas):
-        canvas.draw_image(self.image, canvas.rect.x, canvas.rect.y)
+        # This is the normal draw routine
+        canvas.draw_image(self.image, 0, 0)
         canvas.paint = paint.Paint()
         canvas.paint.color = "000000aa"
         canvas.draw_rect(canvas.rect)
@@ -156,7 +256,7 @@ class ScreenshotOverlay(abc.ABC):
         cron.after("2s", clear_flash)
 
     def _focus_event(self, focussed):
-        if not focussed:
+        if not focussed and self.unfocus_destroy_enabled:
             self.destroy()
             self.result_handler(None)
 
@@ -249,7 +349,7 @@ class BoxSelectorOverlay(ScreenshotOverlay):
             return
         canvas.save()
         canvas.clip_rect(self.hl_region, canvas.ClipOp.INTERSECT)
-        canvas.draw_image(self.image, self.offsetx, self.offsety)
+        canvas.draw_image(self.image, 0, 0)
         canvas.restore()
         canvas.paint = paint.Paint()
         canvas.paint.style = canvas.paint.Style.STROKE
@@ -280,8 +380,8 @@ class BoxSelectorOverlay(ScreenshotOverlay):
 
         # I think make_subset does this more cleanly, but I don't know what the Talon API is
         region = self._get_region()
-        xpos = region.x - self.offsetx
-        ypos = region.y - self.offsety
+        xpos = region.x
+        ypos = region.y
         arr = np.array(self.image)[
             ypos:(ypos + region.height),
             xpos:(xpos + region.width),
@@ -490,8 +590,8 @@ class ImageSelectorOverlay(BoxSelectorOverlay):
         )
         self.result_rects = [
             TalonRect(
-                rect.x + self.offsetx,
-                rect.y + self.offsety,
+                rect.x,
+                rect.y,
                 rect.width,
                 rect.height
             )
@@ -508,7 +608,7 @@ class ImageSelectorOverlay(BoxSelectorOverlay):
                 continue
             canvas.save()
             canvas.clip_rect(rect, canvas.ClipOp.INTERSECT)
-            canvas.draw_image(self.image, self.offsetx, self.offsety)
+            canvas.draw_image(self.image, 0, 0)
             canvas.restore()
             canvas.draw_rect(rect)
 

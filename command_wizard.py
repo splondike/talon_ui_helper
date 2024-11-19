@@ -5,7 +5,7 @@ Actions related to building voice commands.
 import os
 import datetime
 
-from talon import Module, Context, actions, ui, imgui
+from talon import Module, Context, actions, cron, ui, imgui
 
 from .overlays import ImageSelectorOverlay, BlobBoxOverlay
 from .mouse_helper import get_image_template_directory
@@ -171,7 +171,6 @@ active_rectangle_before_overlay = None
 
 
 def open_overlay(index):
-    global existing_overlay
     global active_rectangle_before_overlay
 
     active_rectangle_before_overlay = ui.active_window().rect
@@ -182,7 +181,12 @@ def open_overlay(index):
         existing_overlay.destroy()
 
     _, overlay, handler, help = command_wizards[index]
-    existing_overlay = overlay(handler, text=help)
+    def _open():
+        global existing_overlay
+        existing_overlay = overlay(handler, text=help)
+    # Do this after a delay to give the imgui a chance to get removed from
+    # the screen so it won't show up in our screenshot.
+    cron.after("50ms", _open)
 
 
 @imgui.open(y=0)
