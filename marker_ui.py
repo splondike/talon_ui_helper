@@ -38,6 +38,8 @@ class MarkerUi:
             else:
                 rect = active_window.screen.rect
 
+            # width -= 1 works around bug in Windows Talon, see: https://github.com/talonvoice/talon/issues/670
+            rect.width -= 1
             self.can = canvas.Canvas.from_rect(rect)
         else:
             self.can = canvas.Canvas.from_screen(ui.screens()[screen_idx])
