@@ -380,11 +380,13 @@ class BoxSelectorOverlay(ScreenshotOverlay):
 
         # I think make_subset does this more cleanly, but I don't know what the Talon API is
         region = self._get_region()
-        xpos = region.x
-        ypos = region.y
+        xpos = int(region.x)
+        ypos = int(region.y)
+        height = int(region.height)
+        width = int(region.width)
         arr = np.array(self.image)[
-            ypos:(ypos + region.height),
-            xpos:(xpos + region.width),
+            ypos:(ypos + height),
+            xpos:(xpos + width),
         ]
         if len(arr) == 0:
             return None
